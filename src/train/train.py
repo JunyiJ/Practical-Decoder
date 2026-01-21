@@ -1,4 +1,8 @@
 from pathlib import Path
+import logging
+import sys
+import time
+import resource
 
 import hydra
 from hydra.utils import to_absolute_path
@@ -8,6 +12,26 @@ from datetime import datetime
 from ..models.gpt import GPT
 from ..data.loaders import TinyDataLoader
 from ..utils.checkpoint import save_checkpoint
+
+log = logging.getLogger(__name__)
+
+def _get_rss_mb() -> float:
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        rss_bytes = rss
+    else:
+        rss_bytes = rss * 1024
+    return rss_bytes / (1024 * 1024)
+
+
+def _get_accel_mem_mb(device: str) -> float | None:
+    if device.startswith("cuda") and torch.cuda.is_available():
+        return torch.cuda.max_memory_allocated() / (1024 * 1024)
+    if device == "mps" and hasattr(torch, "mps"):
+        current = getattr(torch.mps, "current_allocated_memory", None)
+        if callable(current):
+            return current() / (1024 * 1024)
+    return None
 
 @hydra.main(version_base=None, config_path="../config", config_name="mac_tinyshakespeare")
 def train(cfg: DictConfig):
@@ -31,17 +55,41 @@ def train(cfg: DictConfig):
     checkpoint_every = cfg.training.checkpoint_every
     if checkpoint_dir:
         Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    print(f"Starting training: {cfg.model.attn_type} + {cfg.model.mlp_type} on {device}")
+    log.info("Starting training: %s + %s on %s", cfg.model.attn_type, cfg.model.mlp_type, device)
     model.train()
+    start_time = time.perf_counter()
     for iter in range(cfg.training.max_iters):
+        iter_start = time.perf_counter()
         xb, yb = loader.get_batch('train')
         logits, loss = model(xb, yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+        iter_time = time.perf_counter() - iter_start
 
-        if iter % 100 == 0:
-            print(f"Step {iter}: Loss {loss.item():.4f}")
+        if iter % 400 == 0:
+            elapsed = time.perf_counter() - start_time
+            rss_mb = _get_rss_mb()
+            accel_mb = _get_accel_mem_mb(device)
+            if accel_mb is None:
+                log.info(
+                    "Step %d: Loss %.4f | iter %.3fs | elapsed %.1fs | rss %.1f MB",
+                    iter,
+                    loss.item(),
+                    iter_time,
+                    elapsed,
+                    rss_mb,
+                )
+            else:
+                log.info(
+                    "Step %d: Loss %.4f | iter %.3fs | elapsed %.1fs | rss %.1f MB | accel %.1f MB",
+                    iter,
+                    loss.item(),
+                    iter_time,
+                    elapsed,
+                    rss_mb,
+                    accel_mb,
+                )
         if checkpoint_dir and checkpoint_every > 0 and (iter + 1) % checkpoint_every == 0:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_checkpoint(
