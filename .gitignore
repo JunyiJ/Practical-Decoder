@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Models
+data/raw/
+checkpoints/
+outputs/
+wandb/
+
+# Environment
+.venv/
+env/
+venv/
+.env
+
+# MacOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/

@@ -9,15 +9,20 @@ class GPT(nn.Module):
         self.cfg = cfg
         self.transformer = nn.ModuleDict({
             "wte": nn.Embedding(cfg.vocab_size, cfg.dim),
+            "wpe": nn.Embedding(cfg.block_size, cfg.dim),
             "h": nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)]),
             "ln_f": nn.LayerNorm(cfg.dim)
         })
-        self.lm_head = nn.Linear(cfg.dim, cfg,vocab_size, bias=False)
+        self.lm_head = nn.Linear(cfg.dim, cfg.vocab_size, bias=False)
 
     def forward(self, idx, targets=None):
-        device = idx.device
         b, t = idx.size()
-        x = self.transformer.wte(idx)
+        if t > self.cfg.block_size:
+            raise ValueError(f"Sequence length {t} exceeds block_size {self.cfg.block_size}")
+        token_emb = self.transformer.wte(idx)
+        pos = torch.arange(0, t, device=idx.device)
+        pos_emb = self.transformer.wpe(pos)
+        x = token_emb + pos_emb
         aux_losses = []
         for block in self.transformer.h:
             x, block_aux_loss = block(x)
@@ -28,7 +33,7 @@ class GPT(nn.Module):
 
         loss = None
         if targets is not None:
-            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets)
+            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
             if aux_losses:
                 loss += sum(aux_losses)
         
