@@ -1,0 +1,26 @@
+# src/llm_lab/config/defaults.yaml
+model:
+  dim: 256
+  n_layers: 4
+  n_heads: 8
+  vocab_size: 50257 # Default GPT-2 vocab
+  block_size: 512
+  dropout: 0.1
+  
+  # Swappable components
+  attn_type: "mha" # options: mha, gqa, gha, sparse
+  n_kv_heads: 8    # for GQA: set to 1 or 2
+  mlp_type: "dense" # options: dense, moe
+  
+  moe:
+    num_experts: 8
+    top_k: 2
+    aux_loss_weight: 0.01
+
+training:
+  batch_size: 32
+  learning_rate: 6e-4
+  max_iters: 1000
+  weight_decay: 0.1
+  grad_clip: 1.0
+  device: "mps" # Change to "cuda" on RunPod

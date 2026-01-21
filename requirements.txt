@@ -1,0 +1,27 @@
+# --- Core Deep Learning Framework ---
+torch>=2.2.0              # Supports SDPA and modern MPS (Mac) optimizations
+numpy>=1.24.0             # General tensor/data manipulation
+
+# --- Config & Experiment Management ---
+hydra-core>=1.3.2         # Hierarchical config (perfect for swapping attention/MoE modules)
+omegaconf>=2.3.0          # Backend for Hydra
+wandb>=0.16.0             # Logging loss, tokens/sec, and GPU/MPS metrics
+
+# --- Data & Tokenization ---
+tiktoken>=0.5.0           # Fast BPE (used by GPT-4/Llama 3)
+datasets>=2.16.0          # Quick access to toy datasets (TinyStories, WikiText)
+
+# --- Development & Code Quality ---
+pytest>=7.4.0             # Crucial for your "Session Checklist" (testing GQA vs MHA)
+ruff>=0.1.0               # Linter and formatter (extremely fast)
+pre-commit>=3.5.0         # Automates linting on every commit
+
+# --- Profiling & Visualization ---
+tqdm>=4.66.0              # Progress bars for training/benchmarking
+tabulate>=0.9.0           # For printing clean benchmark tables in the console
+pyyaml>=6.0.0             # Parsing local config files
+
+# --- Performance & CUDA (RunPod Specific) ---
+# Note: Triton is Linux-only. On Mac, these will be ignored or should be installed conditionally.
+# triton>=2.1.0; sys_platform == 'linux'
+# setuptools                # Often required for compiling custom CUDA/Triton extensions
