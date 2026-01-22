@@ -15,17 +15,24 @@ class GPT(nn.Module):
         })
         self.lm_head = nn.Linear(cfg.dim, cfg.vocab_size, bias=False)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, cache=None, start_pos=0):
         b, t = idx.size()
-        if t > self.cfg.block_size:
-            raise ValueError(f"Sequence length {t} exceeds block_size {self.cfg.block_size}")
+        if start_pos + t > self.cfg.block_size:
+            raise ValueError(
+                f"Sequence length {t} with start_pos {start_pos} exceeds block_size {self.cfg.block_size}"
+            )
         token_emb = self.transformer.wte(idx)
-        pos = torch.arange(0, t, device=idx.device)
+        pos = torch.arange(start_pos, start_pos + t, device=idx.device)
         pos_emb = self.transformer.wpe(pos)
         x = token_emb + pos_emb
         aux_losses = []
-        for block in self.transformer.h:
-            x, block_aux_loss = block(x)
+        if cache is not None and not isinstance(cache, (list, tuple)):
+            raise TypeError("cache must be a list/tuple of per-layer KVCache objects")
+        if cache is not None and len(cache) != len(self.transformer.h):
+            raise ValueError("cache length must match number of transformer blocks")
+        for layer_idx, block in enumerate(self.transformer.h):
+            layer_cache = None if cache is None else cache[layer_idx]
+            x, block_aux_loss = block(x, layer_cache, start_pos)
             if block_aux_loss is not None:
                 aux_losses.append(block_aux_loss)
         x = self.transformer.ln_f(x)

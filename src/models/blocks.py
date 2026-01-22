@@ -32,9 +32,9 @@ class TransformerBlock(nn.Module):
         else:
             raise ValueError(f"Unknown mlp_type: {cfg.mlp_type}")
 
-    def forward(self, x):
+    def forward(self, x, cache=None, start_pos=0):
         residual = x
-        x, _ = self.attn(self.ln1(x))
+        x, _ = self.attn(self.ln1(x), cache, start_pos)
         x = residual + x
         mlp_out = self.mlp(self.ln2(x))
 

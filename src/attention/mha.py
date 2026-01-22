@@ -14,7 +14,7 @@ class ScaledAttention(nn.Module):
         self.qkv = nn.Linear(self.dim, self.attn_dim * 3, bias=attn_bias)
         self.attn_dropout = nn.Dropout(attn_drop)
 
-    def forward(self, x):
+    def forward(self, x, cache=None, start_pos=0):
         b, s, d = x.size()
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -85,7 +85,7 @@ class MHA(nn.Module):
             self.causal_mask = torch.tril(torch.ones(s, s, device=device, dtype=torch.bool))
         return self.causal_mask[:s, :s]
 
-    def forward(self, x):
+    def forward(self, x, cache=None, start_pos=0):
         b, s, d = x.size()
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -93,10 +93,14 @@ class MHA(nn.Module):
         q = q.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
         k = k.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
         v = v.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
+        if cache is not None:
+            k, v = cache.update(k, v, start_pos)
 
         att = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         if self.causal:
-            mask = self._get_causal_mask(s, x.device)
+            total_len = k.size(-2)
+            mask = self._get_causal_mask(total_len, x.device)
+            mask = mask[start_pos:start_pos + s, :total_len]
             att = att.masked_fill(~mask, float("-inf"))
         att = torch.softmax(att, dim=-1)
         att = self.attn_dropout(att)

@@ -41,7 +41,7 @@ class GQA(nn.Module):
             self.causal_mask = torch.tril(torch.ones(s, s, device=device, dtype=torch.bool))
         return self.causal_mask[:s, :s]
 
-    def forward(self, x):
+    def forward(self, x, cache=None, start_pos=0):
         b, s, d = x.size()
         qkv = self.qkv(x)
         kv_dim = self.n_kv_heads * self.head_dim
@@ -49,15 +49,20 @@ class GQA(nn.Module):
         q = q.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
         k = k.view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(b, s, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if cache is not None:
+            k, v = cache.update(k, v, start_pos)
         if self.group_factor > 1:
+            k_len = k.size(-2)
             # Expand KV heads across groups without materializing repeats.
-            k = k.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, s, self.head_dim)
-            v = v.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, s, self.head_dim)
-            k = k.reshape(b, self.n_heads, s, self.head_dim)
-            v = v.reshape(b, self.n_heads, s, self.head_dim)
+            k = k.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
+            v = v.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
+            k = k.reshape(b, self.n_heads, k_len, self.head_dim)
+            v = v.reshape(b, self.n_heads, k_len, self.head_dim)
         attn_score = q @ k.transpose(-2, -1) / math.sqrt(self.head_dim)
         if self.causal:
-            causal_mask = self._get_causal_mask(s, x.device)
+            total_len = k.size(-2)
+            causal_mask = self._get_causal_mask(total_len, x.device)
+            causal_mask = causal_mask[start_pos:start_pos + s, :total_len]
             attn_score = attn_score.masked_fill(~causal_mask, float("-inf"))
         attn_score = torch.softmax(attn_score, dim=-1)
         attn_score = self.attn_dropout(attn_score)

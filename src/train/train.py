@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import logging
 import sys
 import time
@@ -56,9 +57,10 @@ def train(cfg: DictConfig):
     if checkpoint_dir:
         Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
     log.info("Starting training: %s + %s on %s", cfg.model.attn_type, cfg.model.mlp_type, device)
-    model.train()
+    
     start_time = time.perf_counter()
     for iter in range(cfg.training.max_iters):
+        model.train()
         iter_start = time.perf_counter()
         xb, yb = loader.get_batch('train')
         logits, loss = model(xb, yb)
@@ -71,20 +73,35 @@ def train(cfg: DictConfig):
             elapsed = time.perf_counter() - start_time
             rss_mb = _get_rss_mb()
             accel_mb = _get_accel_mem_mb(device)
+            model.eval()
+            eval_losses = 0.0
+            with torch.no_grad():
+                for _ in range(100):
+                    x_eval, y_eval = loader.get_batch('val')
+                    _, eval_loss = model(x_eval, y_eval)
+                    eval_losses += eval_loss.item()
+            avg_eval_loss = eval_losses / 100
+            ppl = math.exp(avg_eval_loss)
+
+            
             if accel_mb is None:
                 log.info(
-                    "Step %d: Loss %.4f | iter %.3fs | elapsed %.1fs | rss %.1f MB",
+                    "Step %d: Loss %.4f | val %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB",
                     iter,
                     loss.item(),
+                    avg_eval_loss,
+                    ppl,
                     iter_time,
                     elapsed,
                     rss_mb,
                 )
             else:
                 log.info(
-                    "Step %d: Loss %.4f | iter %.3fs | elapsed %.1fs | rss %.1f MB | accel %.1f MB",
+                    "Step %d: Loss %.4f | val %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB | accel %.1f MB",
                     iter,
                     loss.item(),
+                    avg_eval_loss,
+                    ppl,
                     iter_time,
                     elapsed,
                     rss_mb,

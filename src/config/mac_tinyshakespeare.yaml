@@ -11,8 +11,8 @@ model:
   dropout: 0.1
   
   # Swappable components
-  attn_type: "mha" # options: mha, gqa, gha, sparse
-  n_kv_heads: 8    # for GQA: set to 1 or 2
+  attn_type: "gqa" # options: mha, gqa, gha, sparse
+  n_kv_heads: 2    # for GQA: set to 1 or 2
   mlp_type: "dense" # options: dense, moe
   
   moe:
