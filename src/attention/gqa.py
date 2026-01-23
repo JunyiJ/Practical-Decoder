@@ -58,14 +58,18 @@ class GQA(nn.Module):
             k = apply_rotary_emb(k, cos, sin)
         if cache is not None:
             k, v = cache.update(k, v, start_pos)
-        if self.group_factor > 1:
-            k_len = k.size(-2)
-            # Expand KV heads across groups without materializing repeats.
-            k = k.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
-            v = v.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
-            k = k.reshape(b, self.n_heads, k_len, self.head_dim)
-            v = v.reshape(b, self.n_heads, k_len, self.head_dim)
-        attn_score = q @ k.transpose(-2, -1) / math.sqrt(self.head_dim)
+        q = q.view(b, self.n_kv_heads, self.group_factor, s, self.head_dim)
+        k_view = k.unsqueeze(2) # (b, n_kv_heads, 1, k_len, head_dim)
+        v_view = v.unsqueeze(2)
+        # if self.group_factor > 1:
+        #     k_len = k.size(-2)
+        #     # Expand KV heads across groups without materializing repeats.
+        #     k = k.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
+        #     v = v.unsqueeze(2).expand(b, self.n_kv_heads, self.group_factor, k_len, self.head_dim)
+            # reshape on an expanded tensor can be performance thief.
+            # k = k.reshape(b, self.n_heads, k_len, self.head_dim)
+            # v = v.reshape(b, self.n_heads, k_len, self.head_dim)
+        attn_score = torch.matmul(q, k_view.transpose(-2, -1)) / math.sqrt(self.head_dim)
         if self.causal:
             total_len = k.size(-2)
             causal_mask = self._get_causal_mask(total_len, x.device)
@@ -73,7 +77,8 @@ class GQA(nn.Module):
             attn_score = attn_score.masked_fill(~causal_mask, float("-inf"))
         attn_score = torch.softmax(attn_score, dim=-1)
         attn_score = self.attn_dropout(attn_score)
-        y = attn_score @ v
+        y = torch.matmul(attn_score, v_view)
+        y = y.view(b, self.n_heads, s, self.head_dim)
         y = y.transpose(1, 2).contiguous().view(b, s, d)
         y = self.dropout(self.out(y))
         return y, None

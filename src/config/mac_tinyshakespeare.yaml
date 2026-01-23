@@ -24,12 +24,12 @@ model:
 training:
   batch_size: 32
   learning_rate: 6e-4
-  max_iters: 20
+  max_iters: 5000
   weight_decay: 0.1
   grad_clip: 1.0
   device: "mps" # Change to "cuda" on RunPod
   checkpoint_dir: "checkpoints"
-  checkpoint_every: 20
+  checkpoint_every: 500
 
 hydra:
   job_logging:
