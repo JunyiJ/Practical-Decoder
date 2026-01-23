@@ -4,9 +4,16 @@ from ..attention.mha import MHA
 from ..attention.gqa import GQA
 from ..moe.moe_block import MoEBlock
 
+from .rope import precompute_freqs_cis
+
 class TransformerBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
+        self.dim = cfg.dim
+        self.n_heads = getattr(cfg, "n_heads", 1)
+        if self.dim % self.n_heads != 0:
+            raise ValueError(f"cfg.dim must be divisible by cfg.n_heads (got {self.dim}, {self.n_heads})")
+        self.head_dim = self.dim // self.n_heads
         # TODO consider RMSNorm
         self.ln1 = nn.LayerNorm(cfg.dim)
 
@@ -31,10 +38,20 @@ class TransformerBlock(nn.Module):
             self.mlp = MoEBlock(cfg)
         else:
             raise ValueError(f"Unknown mlp_type: {cfg.mlp_type}")
+        self.enable_rope = (getattr(cfg, "rope", 0) == 1)
+        if self.enable_rope:
+            if self.head_dim % 2 != 0:
+                raise ValueError("head_dim must be even when rope is enabled")
+            freq_cos, freq_sin = precompute_freqs_cis(self.head_dim, cfg.block_size)
+            self.register_buffer("freq_cos", freq_cos)
+            self.register_buffer("freq_sin", freq_sin)
+        else:
+            self.freq_cos = None
+            self.freq_sin = None
 
     def forward(self, x, cache=None, start_pos=0):
         residual = x
-        x, _ = self.attn(self.ln1(x), cache, start_pos)
+        x, _ = self.attn(self.ln1(x), cache=cache, start_pos=start_pos, freq_cos=self.freq_cos, freq_sin=self.freq_sin)
         x = residual + x
         mlp_out = self.mlp(self.ln2(x))
 

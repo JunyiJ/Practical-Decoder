@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import time
+import resource
+import sys
 from typing import Optional
 
 import torch
@@ -9,6 +12,11 @@ from omegaconf import OmegaConf
 from ..data.loaders import TinyDataLoader
 from ..models.gpt import GPT
 from ..attention.cache import KVCache
+
+try:
+    import psutil
+except ImportError:  # pragma: no cover - optional dependency for memory stats
+    psutil = None
 
 def _select_device(requested: Optional[str]) -> str:
     if requested is None:
@@ -28,6 +36,30 @@ def _encode(prompt: str, stoi: dict[str, int]) -> torch.Tensor:
         raise ValueError(f"Unknown character in prompt: {exc.args[0]!r}") from exc
     return torch.tensor(ids, dtype=torch.long)
 
+def _device_type(device) -> str:
+    if isinstance(device, torch.device):
+        return device.type
+    return str(device).split(":")[0]
+
+
+def get_mem_usage(device):
+    """Returns memory usage in MB."""
+    device_type = _device_type(device)
+    if device_type == "cuda" and torch.cuda.is_available():
+        return torch.cuda.memory_allocated() / 1e6
+    if device_type == "mps" and hasattr(torch, "mps"):
+        # MPS memory is part of unified memory; we track the process RSS 
+        # or use torch.mps.current_allocated_memory() in newer versions
+        current = getattr(torch.mps, "current_allocated_memory", None)
+        if callable(current):
+            return current() / 1e6
+        return 0.0
+    # CPU
+    if psutil is not None:
+        return psutil.Process().memory_info().rss / 1e6
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_bytes = rss if sys.platform == "darwin" else rss * 1024
+    return rss_bytes / 1e6
 
 @torch.no_grad()
 def generate(
@@ -75,6 +107,40 @@ def generate(
         next_id = _sample_next(logits[:, -1, :])
         idx = torch.cat((idx, next_id), dim=1)
     return idx
+
+@torch.no_grad()
+def benchmark_generate(model, idx, max_new_tokens, **kwargs):
+    device = idx.device
+    
+    # --- Warmup ---
+    _ = generate(model, idx, max_new_tokens=5, **kwargs)
+    if kwargs.get("cache"):
+        for c in kwargs["cache"]: c.reset()
+
+    # --- Benchmark Start ---
+    start_time = time.perf_counter()
+    start_mem = get_mem_usage(device)
+    
+    output = generate(model, idx, max_new_tokens=max_new_tokens, **kwargs)
+    
+    end_time = time.perf_counter()
+    end_mem = get_mem_usage(device)
+    
+    # Metrics calculation
+    total_time = end_time - start_time
+    tokens_sec = max_new_tokens / total_time
+    ms_per_token = (total_time / max_new_tokens) * 1000
+    mem_delta = end_mem - start_mem
+    
+    print(f"\n{'='*30}")
+    print(f"BENCHMARK RESULTS ({model.cfg.attn_type.upper()})")
+    print(f"{'='*30}")
+    print(f"Throughput:      {tokens_sec:.2f} tokens/sec")
+    print(f"Latency:         {ms_per_token:.2f} ms/token")
+    print(f"Peak Cache Mem:  {mem_delta:.2f} MB")
+    print(f"{'='*30}\n")
+    
+    return output
 
 
 def main() -> None:
@@ -137,6 +203,9 @@ def main() -> None:
         greedy=args.greedy,
     )
     text = loader.decode(out[0].tolist())
+    if caches is not None:
+        for cache in caches:
+            cache.reset()
     print(text)
 
 

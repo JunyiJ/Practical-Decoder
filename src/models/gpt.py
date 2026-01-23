@@ -14,6 +14,7 @@ class GPT(nn.Module):
             "ln_f": nn.LayerNorm(cfg.dim)
         })
         self.lm_head = nn.Linear(cfg.dim, cfg.vocab_size, bias=False)
+        self.enable_rope = (getattr(cfg, "rope", 0) == 1)
 
     def forward(self, idx, targets=None, cache=None, start_pos=0):
         b, t = idx.size()
@@ -22,9 +23,12 @@ class GPT(nn.Module):
                 f"Sequence length {t} with start_pos {start_pos} exceeds block_size {self.cfg.block_size}"
             )
         token_emb = self.transformer.wte(idx)
-        pos = torch.arange(start_pos, start_pos + t, device=idx.device)
-        pos_emb = self.transformer.wpe(pos)
-        x = token_emb + pos_emb
+        if not self.enable_rope:
+            pos = torch.arange(start_pos, start_pos + t, device=idx.device)
+            pos_emb = self.transformer.wpe(pos)
+            x = token_emb + pos_emb
+        else:
+            x = token_emb
         aux_losses = []
         if cache is not None and not isinstance(cache, (list, tuple)):
             raise TypeError("cache must be a list/tuple of per-layer KVCache objects")

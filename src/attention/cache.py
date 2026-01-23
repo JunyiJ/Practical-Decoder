@@ -20,7 +20,6 @@ class KVCache(nn.Module):
         )
         self.register_buffer("k_cache", torch.zeros(cache_shape, device=device, dtype=dtype))
         self.register_buffer("v_cache", torch.zeros(cache_shape, device=device, dtype=dtype))
-        self.current_pos = 0
 
     def update(self, k_new, v_new, start_pos):
         """
@@ -31,9 +30,9 @@ class KVCache(nn.Module):
             raise ValueError("Cache size exceeded; increase block_size or reset cache.")
         self.k_cache[:, :, start_pos : end_pos, :] = k_new
         self.v_cache[:, :, start_pos: end_pos, :] = v_new
-        self.current_pos = end_pos
         return self.k_cache[:, :, :end_pos, :], self.v_cache[:, :, :end_pos, :]
 
 
     def reset(self):
-        self.current_pos = 0
+        self.k_cache.zero_()
+        self.v_cache.zero_()

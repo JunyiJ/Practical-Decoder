@@ -9,6 +9,7 @@ model:
   vocab_size: 50257 # Default GPT-2 vocab
   block_size: 512
   dropout: 0.1
+  rope: 1
   
   # Swappable components
   attn_type: "gqa" # options: mha, gqa, gha, sparse
@@ -23,12 +24,12 @@ model:
 training:
   batch_size: 32
   learning_rate: 6e-4
-  max_iters: 9600
+  max_iters: 20
   weight_decay: 0.1
   grad_clip: 1.0
   device: "mps" # Change to "cuda" on RunPod
   checkpoint_dir: "checkpoints"
-  checkpoint_every: 400
+  checkpoint_every: 20
 
 hydra:
   job_logging:

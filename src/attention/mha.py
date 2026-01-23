@@ -3,6 +3,8 @@ import math
 import torch
 import torch.nn as nn
 
+from ..models.rope import apply_rotary_emb
+
 
 class ScaledAttention(nn.Module):
     def __init__(self, dim, attn_dim, attn_bias, attn_drop, causal=True):
@@ -85,7 +87,7 @@ class MHA(nn.Module):
             self.causal_mask = torch.tril(torch.ones(s, s, device=device, dtype=torch.bool))
         return self.causal_mask[:s, :s]
 
-    def forward(self, x, cache=None, start_pos=0):
+    def forward(self, x, cache=None, start_pos=0, freq_cos=None, freq_sin=None):
         b, s, d = x.size()
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -93,6 +95,11 @@ class MHA(nn.Module):
         q = q.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
         k = k.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
         v = v.view(b, s, self.n_heads, self.head_dim).transpose(1, 2)
+        if freq_cos is not None and freq_sin is not None:
+            cos = freq_cos[start_pos:start_pos + s].to(device=q.device, dtype=q.dtype)
+            sin = freq_sin[start_pos:start_pos + s].to(device=q.device, dtype=q.dtype)
+            q = apply_rotary_emb(q, cos, sin)
+            k = apply_rotary_emb(k, cos, sin)
         if cache is not None:
             k, v = cache.update(k, v, start_pos)
 
