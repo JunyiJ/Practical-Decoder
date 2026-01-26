@@ -7,6 +7,7 @@ class GPT(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        self.aux_loss_weight = getattr(cfg, "aux_loss_weight", 1.0)
         self.transformer = nn.ModuleDict({
             "wte": nn.Embedding(cfg.vocab_size, cfg.dim),
             "wpe": nn.Embedding(cfg.block_size, cfg.dim),
@@ -46,6 +47,6 @@ class GPT(nn.Module):
         if targets is not None:
             loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
             if aux_losses:
-                loss += sum(aux_losses)
+                loss += self.aux_loss_weight * sum(aux_losses)
         
         return logits, loss

@@ -14,7 +14,7 @@ model:
   # Swappable components
   attn_type: "gqa" # options: mha, gqa, gha, sparse
   n_kv_heads: 2    # for GQA: set to 1 or 2
-  mlp_type: "dense" # options: dense, moe
+  mlp_type: "moe" # options: dense, moe
   
   moe:
     num_experts: 8
