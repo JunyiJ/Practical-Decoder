@@ -10,6 +10,7 @@ model:
   block_size: 512
   dropout: 0.1
   rope: 1
+  norm_type: "rmsnorm"
   
   # Swappable components
   attn_type: "gqa" # options: mha, gqa, gha, sparse
@@ -18,6 +19,7 @@ model:
   
   moe:
     num_experts: 4
+    shared_num_experts: 1
     top_k: 2
     aux_loss_weight: 0.01
 

@@ -8,6 +8,7 @@ class MoEBlock(nn.Module):
         super().__init__()
         self.dim = cfg.dim
         self.hidden_dim = getattr(cfg, "moe_hidden_dim", cfg.dim * 4)
+        self.shared_num_experts = getattr(cfg, "moe_shared_num_experts", 0)
         self.num_experts = getattr(cfg, "moe_num_experts", 4)
         self.top_k = getattr(cfg, "moe_top_k", 2)
         self.record_expert_hist = getattr(cfg, "moe_record_expert_hist", True)
@@ -21,7 +22,7 @@ class MoEBlock(nn.Module):
                 nn.GELU(),
                 nn.Linear(self.hidden_dim, self.dim),
                 nn.Dropout(cfg.dropout)
-            ) for _ in range(self.num_experts)
+            ) for _ in range(self.num_experts + self.shared_num_experts)
         ])
 
     def calculate_aux_loss(self, router_probs, selected_experts):
@@ -46,8 +47,8 @@ class MoEBlock(nn.Module):
         final_output = torch.zeros_like(x_flat)
         router_x = self.router(x_flat)
         router_probs = F.softmax(router_x, dim=-1)
-        top_k_values, top_k_indices = torch.topk(router_x, self.top_k, dim=-1)
-        top_k_probs = F.softmax(top_k_values, dim=-1)
+        top_k_values, top_k_indices = torch.topk(router_probs, self.top_k, dim=-1)
+        top_k_probs = top_k_values / top_k_values.sum(dim=-1, keepdim=True)
         aux_loss = self.calculate_aux_loss(router_probs, top_k_indices)
         if self.record_expert_hist:
             with torch.no_grad():
@@ -61,4 +62,7 @@ class MoEBlock(nn.Module):
                 weight = top_k_probs[indices, experts].unsqueeze(dim=-1)
                 expert_output = self.experts[i](x_flat[indices])
                 final_output[indices] += weight * expert_output
+        if self.shared_num_experts > 0:
+            for i in range(self.num_experts, self.num_experts + self.shared_num_experts):
+                final_output += self.experts[i](x_flat)
         return final_output.view(b, s, d), aux_loss

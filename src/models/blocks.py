@@ -14,8 +14,15 @@ class TransformerBlock(nn.Module):
         if self.dim % self.n_heads != 0:
             raise ValueError(f"cfg.dim must be divisible by cfg.n_heads (got {self.dim}, {self.n_heads})")
         self.head_dim = self.dim // self.n_heads
-        # TODO consider RMSNorm
-        self.ln1 = nn.LayerNorm(cfg.dim)
+        self.norm_type = getattr(cfg, "norm_type", "layernorm")
+        if self.norm_type == "layernorm":
+            self.ln1 = nn.LayerNorm(cfg.dim)
+            self.ln2 = nn.LayerNorm(cfg.dim)
+        elif self.norm_type == "rmsnorm":
+            self.ln1 = nn.RMSNorm(cfg.dim)
+            self.ln2 = nn.RMSNorm(cfg.dim)
+        else:
+            raise ValueError(f"Unknown norm_type: {cfg.norm_type}")
 
         if cfg.attn_type == "mha":
             self.attn = MHA(cfg)
@@ -24,8 +31,6 @@ class TransformerBlock(nn.Module):
         else:
             raise ValueError(f"Unknown attn_type: {cfg.attn_type}")
         # TODO add more variants later
-
-        self.ln2 = nn.LayerNorm(cfg.dim)
 
         if cfg.mlp_type == "dense":
             self.mlp = nn.Sequential(
