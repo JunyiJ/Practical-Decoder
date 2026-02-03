@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..models.mlp import SwiGLU
+
 
 class MoEBlock(nn.Module):
     def __init__(self, cfg):
@@ -16,14 +18,23 @@ class MoEBlock(nn.Module):
         if self.top_k < 1:
             raise ValueError("cfg.moe_top_k must be >= 1")
         self.router = nn.Linear(self.dim, self.num_experts, bias=False)
-        self.experts = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(self.dim, self.hidden_dim),
-                nn.GELU(),
-                nn.Linear(self.hidden_dim, self.dim),
-                nn.Dropout(cfg.dropout)
-            ) for _ in range(self.num_experts + self.shared_num_experts)
-        ])
+        self.ffn = getattr(cfg, "moe_ffn", "gelu")
+        if self.ffn == "gelu":
+            self.experts = nn.ModuleList([
+                nn.Sequential(
+                    nn.Linear(self.dim, self.hidden_dim),
+                    nn.GELU(),
+                    nn.Linear(self.hidden_dim, self.dim),
+                    nn.Dropout(cfg.dropout)
+                ) for _ in range(self.num_experts + self.shared_num_experts)
+            ])
+        elif self.ffn == "swiglu":
+            self.experts = nn.ModuleList([
+                SwiGLU(self.dim, self.hidden_dim, cfg.dropout)
+                for _ in range(self.num_experts + self.shared_num_experts)
+            ])
+        else:
+            raise ValueError(f"cfg.moe_ffn has unsupported type: {self.ffn}")
 
     def calculate_aux_loss(self, router_probs, selected_experts):
         """

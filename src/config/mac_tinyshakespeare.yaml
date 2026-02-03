@@ -3,12 +3,12 @@ data:
   path: "data/raw/shakespeare.txt"
 
 model:
-  dim: 256
+  dim: 128
   n_layers: 4
   n_heads: 8
   vocab_size: 50257 # Default GPT-2 vocab
   block_size: 256
-  dropout: 0.1
+  dropout: 0.2
   rope: 1
   norm_type: "rmsnorm"
   
@@ -22,6 +22,7 @@ model:
     shared_num_experts: 1
     top_k: 2
     aux_loss_weight: 0.01
+    ffn: "gelu"
 
 training:
   batch_size: 32

@@ -5,6 +5,7 @@ from ..attention.gqa import GQA
 from ..moe.moe_block import MoEBlock
 
 from .rope import precompute_freqs_cis
+from .mlp import SwiGLU
 
 class TransformerBlock(nn.Module):
     def __init__(self, cfg):
@@ -31,14 +32,20 @@ class TransformerBlock(nn.Module):
         else:
             raise ValueError(f"Unknown attn_type: {cfg.attn_type}")
         # TODO add more variants later
-
+        self.hidden_dim = getattr(cfg, "hidden_dim", cfg.dim * 4)
         if cfg.mlp_type == "dense":
-            self.mlp = nn.Sequential(
-                nn.Linear(cfg.dim, cfg.dim * 4),
-                nn.GELU(),
-                nn.Linear(cfg.dim * 4, cfg.dim),
-                nn.Dropout(cfg.dropout)
-            )
+            self.ffn = getattr(cfg, "ffn", "gelu")
+            if self.ffn == "gelu":
+                self.mlp = nn.Sequential(
+                    nn.Linear(self.dim, self.hidden_dim),
+                    nn.GELU(),
+                    nn.Linear(self.hidden_dim, self.dim),
+                    nn.Dropout(cfg.dropout)
+                )
+            elif self.ffn == "swiglu":
+                self.mlp = SwiGLU(self.dim, self.hidden_dim, cfg.dropout)
+            else:
+                raise ValueError(f"cfg.ffn has unsupported type: {self.ffn}")
         elif cfg.mlp_type == "moe":
             self.mlp = MoEBlock(cfg)
         else:
