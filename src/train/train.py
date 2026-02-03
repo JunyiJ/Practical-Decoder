@@ -11,7 +11,7 @@ from omegaconf import DictConfig
 import torch
 from datetime import datetime
 from ..models.gpt import GPT
-from ..data.loaders import TinyDataLoader
+from ..data.loaders import TinyDataLoader, TextDataset
 from ..utils.checkpoint import save_checkpoint
 from ..moe.moe_block import MoEBlock
 
@@ -49,7 +49,13 @@ def train(cfg: DictConfig):
     device = cfg.training.device
     if device == "mps" and not torch.backends.mps.is_available():
         device = "cpu"
-    loader = TinyDataLoader(
+    # loader = TinyDataLoader(
+    #     data_path=to_absolute_path(cfg.data.path),
+    #     batch_size = cfg.training.batch_size,
+    #     block_size = cfg.model.block_size,
+    #     device = device
+    # )
+    loader = TextDataset(
         data_path=to_absolute_path(cfg.data.path),
         batch_size = cfg.training.batch_size,
         block_size = cfg.model.block_size,

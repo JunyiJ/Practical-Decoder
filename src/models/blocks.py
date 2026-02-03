@@ -34,9 +34,9 @@ class TransformerBlock(nn.Module):
 
         if cfg.mlp_type == "dense":
             self.mlp = nn.Sequential(
-                nn.Linear(cfg.dim, cfg.dim * 2),
+                nn.Linear(cfg.dim, cfg.dim * 4),
                 nn.GELU(),
-                nn.Linear(cfg.dim * 2, cfg.dim),
+                nn.Linear(cfg.dim * 4, cfg.dim),
                 nn.Dropout(cfg.dropout)
             )
         elif cfg.mlp_type == "moe":

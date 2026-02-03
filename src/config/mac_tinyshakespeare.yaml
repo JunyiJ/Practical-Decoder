@@ -7,7 +7,7 @@ model:
   n_layers: 4
   n_heads: 8
   vocab_size: 50257 # Default GPT-2 vocab
-  block_size: 512
+  block_size: 256
   dropout: 0.1
   rope: 1
   norm_type: "rmsnorm"
