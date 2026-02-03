@@ -7,9 +7,11 @@ class MoEBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.dim = cfg.dim
-        self.hidden_dim = getattr(cfg, "moe_hidden_dim", cfg.dim * 2)
+        self.hidden_dim = getattr(cfg, "moe_hidden_dim", cfg.dim * 4)
         self.num_experts = getattr(cfg, "moe_num_experts", 4)
         self.top_k = getattr(cfg, "moe_top_k", 2)
+        self.record_expert_hist = getattr(cfg, "moe_record_expert_hist", True)
+        self.last_expert_hist = None
         if self.top_k < 1:
             raise ValueError("cfg.moe_top_k must be >= 1")
         self.router = nn.Linear(self.dim, self.num_experts, bias=False)
@@ -40,28 +42,23 @@ class MoEBlock(nn.Module):
         x shape: (batch_size, seq_len, hidden_dim)
         """
         b, s, d = x.shape
-        # Flatten batch and seq for routing
-        x_flat = x.reshape(-1, d)
-        
-        # TODO: Get router logits
-        logits = self.router(x_flat)
-        all_probs = F.softmax(logits, dim=-1)
-        
-        # TODO: Select top-k experts and their weights (probabilities)
-        top_k_logits, top_k_inds = torch.topk(logits, k=self.top_k, dim=-1)
-        top_k_probs = F.softmax(top_k_logits, dim=-1)
-
-        aux_loss = self.calculate_aux_loss(all_probs, top_k_inds)
-        
-        # TODO: Dispatch tokens to experts 
-        # (Challenge: How do you do this efficiently without a for-loop?)
+        x_flat = x.view(-1, d)
         final_output = torch.zeros_like(x_flat)
-        for i, expert in enumerate(self.experts):
-            token_indices, top_k_level = torch.where(top_k_inds == i)
-            if token_indices.numel() > 0:
-                expert_input = x_flat[token_indices]
-                expert_output = expert(expert_input)
-                weights = top_k_probs[token_indices, top_k_level].unsqueeze(-1)
-                final_output[token_indices] += expert_output * weights
-        
+        router_x = self.router(x_flat)
+        router_probs = F.softmax(router_x, dim=-1)
+        top_k_values, top_k_indices = torch.topk(router_x, self.top_k, dim=-1)
+        top_k_probs = F.softmax(top_k_values, dim=-1)
+        aux_loss = self.calculate_aux_loss(router_probs, top_k_indices)
+        if self.record_expert_hist:
+            with torch.no_grad():
+                self.last_expert_hist = torch.bincount(
+                    top_k_indices.reshape(-1),
+                    minlength=self.num_experts,
+                )
+        for i in range(self.num_experts):
+            indices, experts = torch.where(top_k_indices == i)
+            if indices.numel() > 0:
+                weight = top_k_probs[indices, experts].unsqueeze(dim=-1)
+                expert_output = self.experts[i](x_flat[indices])
+                final_output[indices] += weight * expert_output
         return final_output.view(b, s, d), aux_loss

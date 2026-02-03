@@ -17,7 +17,7 @@ model:
   mlp_type: "moe" # options: dense, moe
   
   moe:
-    num_experts: 8
+    num_experts: 4
     top_k: 2
     aux_loss_weight: 0.01
 

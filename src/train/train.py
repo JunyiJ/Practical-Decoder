@@ -13,6 +13,7 @@ from datetime import datetime
 from ..models.gpt import GPT
 from ..data.loaders import TinyDataLoader
 from ..utils.checkpoint import save_checkpoint
+from ..moe.moe_block import MoEBlock
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,15 @@ def _get_accel_mem_mb(device: str) -> float | None:
         if callable(current):
             return current() / (1024 * 1024)
     return None
+
+
+def _collect_moe_hists(model: GPT) -> list[tuple[int, torch.Tensor]]:
+    hists = []
+    for layer_idx, block in enumerate(model.transformer.h):
+        mlp = getattr(block, "mlp", None)
+        if isinstance(mlp, MoEBlock) and mlp.last_expert_hist is not None:
+            hists.append((layer_idx, mlp.last_expert_hist.detach().to("cpu")))
+    return hists
 
 @hydra.main(version_base=None, config_path="../config", config_name="mac_tinyshakespeare")
 def train(cfg: DictConfig):
@@ -70,6 +80,7 @@ def train(cfg: DictConfig):
         iter_time = time.perf_counter() - iter_start
 
         if iter % 400 == 0:
+            train_hists = _collect_moe_hists(model)
             elapsed = time.perf_counter() - start_time
             rss_mb = _get_rss_mb()
             accel_mb = _get_accel_mem_mb(device)
@@ -107,6 +118,23 @@ def train(cfg: DictConfig):
                     rss_mb,
                     accel_mb,
                 )
+            if train_hists:
+                stacked = torch.stack([hist for _, hist in train_hists], dim=0)
+                total = stacked.sum().item()
+                if total > 0:
+                    usage = (stacked.sum(dim=0).float() / total).tolist()
+                    usage_str = ", ".join(f"{u:.3f}" for u in usage)
+                else:
+                    usage_str = "n/a"
+                log.info("MoE expert usage (train batch, top-k assignments): %s", usage_str)
+                for layer_idx, hist in train_hists:
+                    layer_total = hist.sum().item()
+                    if layer_total > 0:
+                        layer_usage = (hist.float() / layer_total).tolist()
+                        layer_usage_str = ", ".join(f"{u:.3f}" for u in layer_usage)
+                    else:
+                        layer_usage_str = "n/a"
+                    log.info("MoE expert usage (layer %d): %s", layer_idx, layer_usage_str)
         if checkpoint_dir and checkpoint_every > 0 and (iter + 1) % checkpoint_every == 0:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_checkpoint(

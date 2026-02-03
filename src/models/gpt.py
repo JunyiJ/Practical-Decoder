@@ -47,6 +47,6 @@ class GPT(nn.Module):
         if targets is not None:
             loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
             if aux_losses:
-                loss += self.aux_loss_weight * sum(aux_losses)
+                loss += self.aux_loss_weight * (sum(aux_losses) / len(aux_losses))
         
         return logits, loss
