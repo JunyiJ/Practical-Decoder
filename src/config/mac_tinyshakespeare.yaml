@@ -3,7 +3,7 @@ data:
   path: "data/raw/shakespeare.txt"
 
 model:
-  dim: 128
+  dim: 256
   n_layers: 4
   n_heads: 8
   vocab_size: 50257 # Default GPT-2 vocab
@@ -11,9 +11,13 @@ model:
   dropout: 0.2
   rope: 1
   norm_type: "rmsnorm"
+  # mla specific params
+  dimckv: 32
+  dimcq: 64
+  head_dim_r: 8
   
   # Swappable components
-  attn_type: "gqa" # options: mha, gqa, gha, sparse
+  attn_type: "mla" # options: mha, gqa, mla
   n_kv_heads: 2    # for GQA: set to 1 or 2
   mlp_type: "moe" # options: dense, moe
   
@@ -22,7 +26,7 @@ model:
     shared_num_experts: 1
     top_k: 2
     aux_loss_weight: 0.01
-    ffn: "gelu"
+    ffn: "swiglu"
 
 training:
   batch_size: 32

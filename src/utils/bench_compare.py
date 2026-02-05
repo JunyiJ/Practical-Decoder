@@ -152,7 +152,7 @@ def _benchmark(
             )
             max_new_tokens = max_allowed
     caches = None
-    if enable_cache and cfg.model.attn_type in ("mha", "gqa"):
+    if enable_cache and cfg.model.attn_type in ("mha", "gqa", "mla"):
         n_kv_heads = cfg.model.n_kv_heads if cfg.model.attn_type == "gqa" else cfg.model.n_heads
         caches = [
             KVCache(

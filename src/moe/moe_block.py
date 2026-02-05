@@ -30,7 +30,7 @@ class MoEBlock(nn.Module):
             ])
         elif self.ffn == "swiglu":
             self.experts = nn.ModuleList([
-                SwiGLU(self.dim, self.hidden_dim, cfg.dropout)
+                SwiGLU(self.dim, self.hidden_dim, cfg.dropout * 4)
                 for _ in range(self.num_experts + self.shared_num_experts)
             ])
         else:

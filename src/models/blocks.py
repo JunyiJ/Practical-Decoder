@@ -2,6 +2,7 @@ import torch.nn as nn
 
 from ..attention.mha import MHA
 from ..attention.gqa import GQA
+from ..attention.mla import MLA
 from ..moe.moe_block import MoEBlock
 
 from .rope import precompute_freqs_cis
@@ -15,6 +16,7 @@ class TransformerBlock(nn.Module):
         if self.dim % self.n_heads != 0:
             raise ValueError(f"cfg.dim must be divisible by cfg.n_heads (got {self.dim}, {self.n_heads})")
         self.head_dim = self.dim // self.n_heads
+        self.head_dim_r = getattr(cfg, "head_dim_r", self.head_dim)
         self.norm_type = getattr(cfg, "norm_type", "layernorm")
         if self.norm_type == "layernorm":
             self.ln1 = nn.LayerNorm(cfg.dim)
@@ -29,6 +31,8 @@ class TransformerBlock(nn.Module):
             self.attn = MHA(cfg)
         elif cfg.attn_type == "gqa":
             self.attn = GQA(cfg)
+        elif cfg.attn_type == "mla":
+            self.attn = MLA(cfg)
         else:
             raise ValueError(f"Unknown attn_type: {cfg.attn_type}")
         # TODO add more variants later
@@ -52,9 +56,10 @@ class TransformerBlock(nn.Module):
             raise ValueError(f"Unknown mlp_type: {cfg.mlp_type}")
         self.enable_rope = (getattr(cfg, "rope", 0) == 1)
         if self.enable_rope:
-            if self.head_dim % 2 != 0:
+            head_dim = self.head_dim_r if cfg.attn_type == "mla" else self.head_dim
+            if head_dim % 2 != 0:
                 raise ValueError("head_dim must be even when rope is enabled")
-            freq_cos, freq_sin = precompute_freqs_cis(self.head_dim, cfg.block_size)
+            freq_cos, freq_sin = precompute_freqs_cis(head_dim, cfg.block_size)
             self.register_buffer("freq_cos", freq_cos)
             self.register_buffer("freq_sin", freq_sin)
         else:
