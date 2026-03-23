@@ -4,10 +4,10 @@ data:
 
 model:
   dim: 256
-  n_layers: 4
+  n_layers: 6
   n_heads: 8
   vocab_size: 50257 # Default GPT-2 vocab
-  block_size: 256
+  block_size: 512
   dropout: 0.2
   rope: 1
   norm_type: "rmsnorm"
@@ -17,9 +17,9 @@ model:
   head_dim_r: 8
   
   # Swappable components
-  attn_type: "mla" # options: mha, gqa, mla
+  attn_type: "gqa" # options: mha, gqa, mla
   n_kv_heads: 2    # for GQA: set to 1 or 2
-  mlp_type: "moe" # options: dense, moe
+  mlp_type: "dense" # options: dense, moe
   
   moe:
     num_experts: 4

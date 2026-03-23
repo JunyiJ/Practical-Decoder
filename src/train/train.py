@@ -49,18 +49,20 @@ def train(cfg: DictConfig):
     device = cfg.training.device
     if device == "mps" and not torch.backends.mps.is_available():
         device = "cpu"
-    # loader = TinyDataLoader(
-    #     data_path=to_absolute_path(cfg.data.path),
-    #     batch_size = cfg.training.batch_size,
-    #     block_size = cfg.model.block_size,
-    #     device = device
-    # )
-    loader = TextDataset(
+    loader = TinyDataLoader(
         data_path=to_absolute_path(cfg.data.path),
         batch_size = cfg.training.batch_size,
         block_size = cfg.model.block_size,
         device = device
     )
+    # The tiktokenizer doesn't work well for mini-shakspear dataset because the training
+    # data is too limited to learn a big vocab as tiktokenizer
+    # loader = TextDataset(
+    #     data_path=to_absolute_path(cfg.data.path),
+    #     batch_size = cfg.training.batch_size,
+    #     block_size = cfg.model.block_size,
+    #     device = device
+    # )
     cfg.model.vocab_size = loader.vocab_size
     model = GPT(cfg.model).to(device)
     optimizer = torch.optim.AdamW(
