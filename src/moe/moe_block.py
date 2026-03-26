@@ -5,20 +5,31 @@ import torch.nn.functional as F
 from ..models.mlp import SwiGLU
 
 
+def _get_moe_cfg_value(cfg, key, default=None):
+    flat_key = f"moe_{key}"
+    if hasattr(cfg, flat_key):
+        return getattr(cfg, flat_key)
+    if hasattr(cfg, "moe"):
+        moe_cfg = getattr(cfg, "moe")
+        if moe_cfg is not None and hasattr(moe_cfg, key):
+            return getattr(moe_cfg, key)
+    return default
+
+
 class MoEBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.dim = cfg.dim
-        self.hidden_dim = getattr(cfg, "moe_hidden_dim", cfg.dim * 4)
-        self.shared_num_experts = getattr(cfg, "moe_shared_num_experts", 0)
-        self.num_experts = getattr(cfg, "moe_num_experts", 4)
-        self.top_k = getattr(cfg, "moe_top_k", 2)
-        self.record_expert_hist = getattr(cfg, "moe_record_expert_hist", True)
+        self.hidden_dim = _get_moe_cfg_value(cfg, "hidden_dim", cfg.dim * 4)
+        self.shared_num_experts = _get_moe_cfg_value(cfg, "shared_num_experts", 0)
+        self.num_experts = _get_moe_cfg_value(cfg, "num_experts", 4)
+        self.top_k = _get_moe_cfg_value(cfg, "top_k", 2)
+        self.record_expert_hist = _get_moe_cfg_value(cfg, "record_expert_hist", True)
         self.last_expert_hist = None
         if self.top_k < 1:
             raise ValueError("cfg.moe_top_k must be >= 1")
         self.router = nn.Linear(self.dim, self.num_experts, bias=False)
-        self.ffn = getattr(cfg, "moe_ffn", "gelu")
+        self.ffn = _get_moe_cfg_value(cfg, "ffn", "gelu")
         if self.ffn == "gelu":
             self.experts = nn.ModuleList([
                 nn.Sequential(

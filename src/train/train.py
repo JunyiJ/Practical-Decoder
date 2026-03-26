@@ -44,6 +44,16 @@ def _collect_moe_hists(model: GPT) -> list[tuple[int, torch.Tensor]]:
             hists.append((layer_idx, mlp.last_expert_hist.detach().to("cpu")))
     return hists
 
+
+def _average_loss_breakdowns(loss_breakdowns: list[dict[str, torch.Tensor]]) -> dict[str, float]:
+    if not loss_breakdowns:
+        raise ValueError("loss_breakdowns must not be empty")
+    return {
+        key: sum(breakdown[key].item() for breakdown in loss_breakdowns) / len(loss_breakdowns)
+        for key in loss_breakdowns[0]
+    }
+
+
 @hydra.main(version_base=None, config_path="../config", config_name="mac_tinyshakespeare")
 def train(cfg: DictConfig):
     device = cfg.training.device
@@ -81,7 +91,7 @@ def train(cfg: DictConfig):
         model.train()
         iter_start = time.perf_counter()
         xb, yb = loader.get_batch('train')
-        logits, loss = model(xb, yb)
+        _, loss, train_breakdown = model(xb, yb, return_loss_breakdown=True)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
@@ -93,22 +103,31 @@ def train(cfg: DictConfig):
             rss_mb = _get_rss_mb()
             accel_mb = _get_accel_mem_mb(device)
             model.eval()
-            eval_losses = 0.0
+            eval_breakdowns = []
             with torch.no_grad():
                 for _ in range(100):
                     x_eval, y_eval = loader.get_batch('val')
-                    _, eval_loss = model(x_eval, y_eval)
-                    eval_losses += eval_loss.item()
-            avg_eval_loss = eval_losses / 100
-            ppl = math.exp(avg_eval_loss)
+                    _, _, eval_breakdown = model(
+                        x_eval,
+                        y_eval,
+                        include_aux_loss=False,
+                        return_loss_breakdown=True,
+                    )
+                    eval_breakdowns.append(eval_breakdown)
+            avg_eval = _average_loss_breakdowns(eval_breakdowns)
+            ppl = math.exp(avg_eval["total_loss"])
 
             
             if accel_mb is None:
                 log.info(
-                    "Step %d: Loss %.4f | val %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB",
+                    "Step %d: train %.4f | train_ce %.4f | train_aux %.4f | val %.4f | val_ce %.4f | val_aux %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB",
                     iter,
-                    loss.item(),
-                    avg_eval_loss,
+                    train_breakdown["total_loss"].item(),
+                    train_breakdown["ce_loss"].item(),
+                    train_breakdown["aux_loss"].item(),
+                    avg_eval["total_loss"],
+                    avg_eval["ce_loss"],
+                    avg_eval["aux_loss"],
                     ppl,
                     iter_time,
                     elapsed,
@@ -116,10 +135,14 @@ def train(cfg: DictConfig):
                 )
             else:
                 log.info(
-                    "Step %d: Loss %.4f | val %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB | accel %.1f MB",
+                    "Step %d: train %.4f | train_ce %.4f | train_aux %.4f | val %.4f | val_ce %.4f | val_aux %.4f | ppl %.2f | iter %.3fs | elapsed %.1fs | rss %.1f MB | accel %.1f MB",
                     iter,
-                    loss.item(),
-                    avg_eval_loss,
+                    train_breakdown["total_loss"].item(),
+                    train_breakdown["ce_loss"].item(),
+                    train_breakdown["aux_loss"].item(),
+                    avg_eval["total_loss"],
+                    avg_eval["ce_loss"],
+                    avg_eval["aux_loss"],
                     ppl,
                     iter_time,
                     elapsed,

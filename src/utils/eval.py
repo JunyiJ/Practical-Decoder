@@ -30,16 +30,19 @@ def _select_device(requested: Optional[str]) -> str:
 
 
 @torch.no_grad()
-def evaluate(model: GPT, loader: TinyDataLoader, eval_iters: int) -> tuple[float, float]:
+def evaluate(model: GPT, loader: TinyDataLoader, eval_iters: int) -> tuple[dict[str, float], float]:
     model.eval()
     losses = []
     for _ in range(eval_iters):
         xb, yb = loader.get_batch("val")
-        _, loss = model(xb, yb)
-        losses.append(loss.item())
-    avg_loss = sum(losses) / len(losses)
-    ppl = math.exp(avg_loss)
-    return avg_loss, ppl
+        _, _, breakdown = model(xb, yb, include_aux_loss=False, return_loss_breakdown=True)
+        losses.append({key: value.item() for key, value in breakdown.items()})
+    avg_losses = {
+        key: sum(loss[key] for loss in losses) / len(losses)
+        for key in losses[0]
+    }
+    ppl = math.exp(avg_losses["total_loss"])
+    return avg_losses, ppl
 
 
 def main() -> None:
@@ -66,8 +69,17 @@ def main() -> None:
     model = GPT(cfg.model).to(device)
     model.load_state_dict(ckpt["model_state"])
 
-    avg_loss, ppl = evaluate(model, loader, args.eval_iters)
-    print(f"val_loss={avg_loss:.4f} val_ppl={ppl:.2f}")
+    avg_losses, ppl = evaluate(model, loader, args.eval_iters)
+    print(
+        " ".join(
+            [
+                f"val_loss={avg_losses['total_loss']:.4f}",
+                f"val_ce_loss={avg_losses['ce_loss']:.4f}",
+                f"val_aux_loss={avg_losses['aux_loss']:.4f}",
+                f"val_ppl={ppl:.2f}",
+            ]
+        )
+    )
 
 
 if __name__ == "__main__":
