@@ -12,13 +12,21 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.moe.moe_block import MoEBlock
 
 
-def _build_cfg(num_experts: int, top_k: int, dim: int = 4, moe_hidden_dim: int = 8) -> SimpleNamespace:
+def _build_cfg(
+    num_experts: int,
+    top_k: int,
+    dim: int = 4,
+    moe_hidden_dim: int = 8,
+    dropout: float = 0.0,
+    moe_ffn: str = "gelu",
+) -> SimpleNamespace:
     return SimpleNamespace(
         dim=dim,
         moe_hidden_dim=moe_hidden_dim,
         moe_num_experts=num_experts,
         moe_top_k=top_k,
-        dropout=0.0,
+        moe_ffn=moe_ffn,
+        dropout=dropout,
     )
 
 
@@ -67,3 +75,10 @@ def test_moe_routes_to_single_expert_and_aux_loss() -> None:
     )
     expected_aux = cfg.moe_num_experts * torch.softmax(logits, dim=0)[0]
     torch.testing.assert_close(aux, expected_aux, rtol=1e-6, atol=1e-7)
+
+
+def test_moe_swiglu_uses_configured_dropout() -> None:
+    cfg = _build_cfg(num_experts=2, top_k=1, dropout=0.2, moe_ffn="swiglu")
+    moe = MoEBlock(cfg)
+
+    assert all(expert.dropout.p == cfg.dropout for expert in moe.experts)
